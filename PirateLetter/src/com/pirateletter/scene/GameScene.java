@@ -22,6 +22,7 @@ import java.security.acl.LastOwnerException;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Random;
 
 import javax.crypto.spec.PSource;
 
@@ -38,10 +39,13 @@ import org.andengine.entity.sprite.AnimationData;
 import org.andengine.entity.sprite.ButtonSprite;
 import org.andengine.entity.sprite.Sprite;
 import org.andengine.entity.text.Text;
+import org.andengine.entity.text.TextOptions;
 import org.andengine.input.touch.TouchEvent;
 import org.andengine.opengl.font.Font;
 import org.andengine.opengl.font.FontFactory;
 import org.andengine.opengl.font.FontManager;
+import org.andengine.opengl.shader.ShaderProgram;
+import org.andengine.opengl.shader.ShaderProgramManager;
 import org.andengine.opengl.texture.TextureManager;
 import org.andengine.opengl.texture.TextureOptions;
 import org.andengine.opengl.texture.atlas.bitmap.BitmapTextureAtlas;
@@ -130,34 +134,36 @@ public class GameScene extends AbstractScene {
 	int currRound = 1;
 	List<Play> plays = new ArrayList<Play>();
 
-	private MoveXModifier modifierX; 
+	private MoveXModifier modifierX;
 	private MoveYModifier modifierY;
 
 	private List<Card> ownCards;
 	private Animation runningAnimation;
 	private List<Animation> animationQueue = new ArrayList<Animation>();
-	boolean animationRunning,showingDraw,showingEndScreen,showingRoundScreen;
+	boolean animationRunning, showingDraw, showingEndScreen,
+			showingRoundScreen, drawCardHighlightIsShown, canInput;
+
 	Player mPlayer = new Player() {
 
 		private static final long serialVersionUID = -6076239573042361892L;
 
 		@Override
 		public void turnMessage() {
-			STATE = -255;
+			canInput = false;
+			drawCardHighlightIsShown = false;
 			plays = mGame.getRemainingPlays(playNr);
-			Debug.i(plays.size() + " plays");
-
 			if (!plays.isEmpty()) {
-
-				STATE = 4;
+				animationRunning = true;
 				initAnimations();
 			} else if (mGame.getRound() > currRound) {
-				STATE = -255;
+				animationRunning = false;
 				showNewRound();
 
 			} else {
-				STATE = 0;
-				updateText();
+				drawCardHighlightIsShown = false;
+				animationRunning = false;
+				canInput = true;
+				// updateText();
 			}
 
 		}
@@ -166,7 +172,8 @@ public class GameScene extends AbstractScene {
 
 	@Override
 	public void loadResources() {
-
+		canInput = true;
+		drawCardHighlightIsShown = false;
 		tm = rm.activity.getTextureManager();
 		fm = rm.activity.getFontManager();
 		try {
@@ -545,6 +552,75 @@ public class GameScene extends AbstractScene {
 		}
 	}
 
+	void UpdatePlayerOutOfRound(String clientname, boolean outOfRound) {
+		String position = getPositionByNr(mGame.getNrByName(clientname));
+		if (position == "Left") {
+			if (outOfRound) {
+				spriteLeftEnemyCard.setAlpha(0.0f);
+			} else {
+				spriteLeftEnemyCard.setAlpha(1.0f);
+			}
+		} else if (position == "Top") {
+			if (outOfRound) {
+				spriteTopEnemyCard.setAlpha(0.0f);
+			} else {
+				spriteTopEnemyCard.setAlpha(1.0f);
+			}
+		} else if (position == "Right") {
+			if (outOfRound) {
+				spriteRightEnemyCard.setAlpha(0.0f);
+			} else {
+				spriteRightEnemyCard.setAlpha(1.0f);
+			}
+		} else if (position == "Bot") {
+			if (outOfRound) {
+				if (spriteOwnCardLeft != null) {
+					spriteOwnCardLeft.setAlpha(0.0f);
+				}
+				if (spriteOwnCardRight != null) {
+					spriteOwnCardRight.setAlpha(0.0f);
+				}
+			} else {
+				if (spriteOwnCardLeft != null) {
+					spriteOwnCardLeft.setAlpha(1.0f);
+				}
+				if (spriteOwnCardRight != null) {
+					spriteOwnCardRight.setAlpha(1.0f);
+				}
+			}
+		}
+
+	}
+
+	void updatePlayerText(String clientName, int keys, boolean isProtected) {
+		String position = getPositionByNr(mGame.getNrByName(clientName));
+		if (position == "Left") {
+			textLeftPlayer.setText(keys + "/4  keys\n\n"
+					+ (isProtected ? "Protected" : "Unprotected"));
+		} else if (position == "Top") {
+			textTopPlayer.setText(keys + "/4  keys\n\n"
+					+ (isProtected ? "Protected" : "Unprotected"));
+		} else if (position == "Right") {
+			textRightPlayer.setText(keys + "/4  keys\n\n"
+					+ (isProtected ? "Protected" : "Unprotected"));
+		} else if (position == "Bot") {
+			textBottomPlayer.setText(keys + "/4  keys\n\n"
+					+ (isProtected ? "Protected" : "Unprotected"));
+		}
+	}
+
+	void updateUiWithAnimation(Animation a) {
+		UpdatePlayerOutOfRound(a.getPlayer().getClientname(), a.getPlayer()
+				.isOutOfRound());
+		UpdatePlayerOutOfRound(a.getEnemy().getClientname(), a.getEnemy()
+				.isOutOfRound());
+		updatePlayerText(a.getPlayer().getClientname(), a.getPlayer()
+				.getPoints(), a.getPlayer().isProtectedForFound());
+		updatePlayerText(a.getEnemy().getClientname(),
+				a.getEnemy().getPoints(), a.getEnemy().isProtectedForFound());
+		textGameInfo.setText("Round = " + a.getPlayer().getRound());
+	}
+
 	void updateCards() {
 		if (mGame.isPlayerOutOfRoundExplicit(mGame
 				.getPlayerClientNameByNr(playerLeft))) {
@@ -671,12 +747,17 @@ public class GameScene extends AbstractScene {
 	}
 
 	void hideDrawCardHighlight() {
+
 		unregisterTouchArea(spriteHLDeck);
 		detachChild(spriteHLDeck);
+		drawCardHighlightIsShown = false;
 	}
 
 	void showDrawCardHighlight() {
+		// TODO Auto-generated method stub
 		// highlightDeck
+		canInput = false;
+		drawCardHighlightIsShown = true;
 		STATE = 1;
 		spriteHLDeck = new Sprite(0, 0, regionHighLightDeck.deepCopy(), rm.vbom) {
 			@Override
@@ -1004,7 +1085,12 @@ public class GameScene extends AbstractScene {
 
 		drawOwnCards();
 		doneDrawOwnCards();
-		STATE = 5;
+		canInput = false;
+		ReplayPlayer beforePlayer = new ReplayPlayer(mPlayer.clientName,mPlayer.isOutOfRound(), mPlayer.isProtectedForRound(), mGame.getRound(), mGame.getPlayerPoint(mPlayer.getClientName()));
+		ReplayPlayer beforeEnemy = new ReplayPlayer(mGame.getPlayerClientNameByNr(playerPick), mGame.isPlayerProtectedExplicit(mGame.getPlayerClientNameByNr(playerPick)), mGame.isPlayerOutOfRoundExplicit(mGame.getPlayerClientNameByNr(playerPick)), mGame.getRound(), mGame.getPlayerPoint(mGame.getPlayerClientNameByNr(playerPick)));
+    	ReplayPlayer afterPlayer = new ReplayPlayer(mPlayer.clientName,mPlayer.isOutOfRound(), mPlayer.isProtectedForRound(), mGame.getRound(), mGame.getPlayerPoint(mPlayer.getClientName()));
+    	ReplayPlayer afterEnemy = new ReplayPlayer(mGame.getPlayerClientNameByNr(playerPick), mGame.isPlayerProtectedExplicit(mGame.getPlayerClientNameByNr(playerPick)), mGame.isPlayerOutOfRoundExplicit(mGame.getPlayerClientNameByNr(playerPick)), mGame.getRound(), mGame.getPlayerPoint(mGame.getPlayerClientNameByNr(playerPick)));        
+    	mGame.addPlay(new Play(mGame.getNextPlayNr(), mPlayer.clientName, 1,mGame.getPlayerClientNameByNr(playerPick), beforePlayer, beforeEnemy, afterPlayer, afterEnemy));
 		mGame.endTurn(mPlayer);
 	}
 
@@ -1327,13 +1413,14 @@ public class GameScene extends AbstractScene {
 	}
 
 	void showEndScreen() {
+		showingEndScreen = true;
 		STATE = 5;
 		spritePopUp = new Sprite(0, 0, regionPopUp, rm.vbom) {
 			@Override
 			public boolean onAreaTouched(TouchEvent pSceneTouchEvent,
 					float pTouchAreaLocalX, float pTouchAreaLocalY) {
 				if (pSceneTouchEvent.isActionUp()) {
-					hideNewRound();
+					//
 				}
 				return super.onAreaTouched(pSceneTouchEvent, pTouchAreaLocalX,
 						pTouchAreaLocalY);
@@ -1353,12 +1440,11 @@ public class GameScene extends AbstractScene {
 				Float.valueOf((float) (rm.SCALED_CAMERA_WIDTH / 1.605)),
 				Float.valueOf((float) (rm.SCALED_CAMERA_HEIGHT / 33.333)));
 
-		textNewRound.setText(mGame.getScoreBoard());
+		textNewRound.setText(mGame.getScoreBoard() + "EINDE");
 		attachChild(textNewRound);
 	}
 
 	private void endAnimation() {
-		STATE = 4;
 		runningAnimation = null;
 		detachChild(spriteCardAnimation);
 		animationCurrTime = 0;
@@ -1368,7 +1454,12 @@ public class GameScene extends AbstractScene {
 			drawAnimation();
 			startAnimation();
 		} else {
-			STATE = 0;
+			if (mGame.getRound() > currRound) {
+				animationRunning = false;
+				showNewRound();
+			} else {
+				canInput = true;
+			}
 		}
 	}
 
@@ -1389,7 +1480,8 @@ public class GameScene extends AbstractScene {
 					.getNrByName(mPlay.getClientName())));
 			s.setPosition(p.x, p.y);
 			addAnimation(getPositionByNr(mGame.getNrByName(mPlay
-					.getBeforePlayer().getClientname())), "Mid", s,mPlay.getBeforePlayer(),mPlay.getBeforeEnemy());
+					.getBeforePlayer().getClientname())), "Mid", s,
+					mPlay.getBeforePlayer(), mPlay.getBeforeEnemy());
 
 			Sprite s2 = new Sprite(0, 0,
 					getCardRegionOnNumber(mPlay.getPlayedCard()), rm.vbom);
@@ -1399,7 +1491,8 @@ public class GameScene extends AbstractScene {
 					.getNrByName(mPlay.getClientName())));
 			s2.setPosition(p2.x, p2.y);
 			addAnimation("Mid", getPositionByNr(mGame.getNrByName(mPlay
-					.getAfterEnemy().getClientname())), s2,mPlay.getAfterPlayer(),mPlay.getAfterEnemy());
+					.getAfterEnemy().getClientname())), s2,
+					mPlay.getAfterPlayer(), mPlay.getAfterEnemy());
 			playNr++;
 		}
 		plays.clear();
@@ -1445,36 +1538,37 @@ public class GameScene extends AbstractScene {
 		unregisterTouchArea(spritePopUp);
 		detachChild(textNewRound);
 		currRound = mGame.getRound();
-		STATE = 0;
+		drawCardHighlightIsShown = false;
+		canInput = true;
+		// updateText();
 	}
 
 	private void startAnimation() {
-		
+
 		if (runningAnimation.getAnimationId() == 1) {
 			modifierX = runningAnimation.getxModifier();
-			modifierX.addModifierListener(
-					new IEntityModifier.IEntityModifierListener() {
+			modifierX
+					.addModifierListener(new IEntityModifier.IEntityModifierListener() {
 
 						@Override
 						public void onModifierStarted(
 								IModifier<IEntity> pModifier, IEntity pItem) {
-							
+
 						}
 
 						@Override
 						public void onModifierFinished(
 								IModifier<IEntity> pModifier, IEntity pItem) {
 							// TODO Auto-generated method stub
-							
+							updateUiWithAnimation(runningAnimation);
 							runningAnimation = null;
 							animationQueue.remove(0);
 							getNextAnimation();
-					
 
 						}
 					});
 			spriteCardAnimation.registerEntityModifier(modifierX);
-			
+
 		} else {
 			modifierY = runningAnimation.getyModifier();
 			runningAnimation.getyModifier().addModifierListener(
@@ -1483,7 +1577,6 @@ public class GameScene extends AbstractScene {
 						@Override
 						public void onModifierStarted(
 								IModifier<IEntity> pModifier, IEntity pItem) {
-						
 
 						}
 
@@ -1500,7 +1593,7 @@ public class GameScene extends AbstractScene {
 			spriteCardAnimation.registerEntityModifier(modifierY);
 		}
 		attachChild(spriteCardAnimation);
-		
+
 	}
 
 	void getNextAnimation() {
@@ -1509,37 +1602,58 @@ public class GameScene extends AbstractScene {
 		if (!animationQueue.isEmpty()) {
 			runningAnimation = animationQueue.get(0);
 			spriteCardAnimation = runningAnimation.getSpriteAnimation();
+			spriteCardAnimation.setPosition(runningAnimation.getBeginPoint().x,
+					runningAnimation.getBeginPoint().y);
 			startAnimation();
-		}else
-		{
+		} else {
 			animationRunning = false;
+			drawCardHighlightIsShown = false;
+			if (mGame.getRound() > currRound) {
+
+				showNewRound();
+			} else {
+				canInput = true;
+			}
 		}
 	}
 
-	void addAnimation(String begin, String end, Sprite s,ReplayPlayer player,ReplayPlayer enemy) {
+	void addAnimation(String begin, String end, Sprite s, ReplayPlayer player,
+			ReplayPlayer enemy) {
 		float animationSpeed = 1f;
 		Animation tempAnimation = null;
 		if (begin == "Left" && end == "Mid") {
 			tempAnimation = new Animation(1, "LeftToMid", animationSpeed,
-					getPointForAnimation(begin), getPointForAnimation(end), s,player,enemy);
+					getPointForAnimation(begin), getPointForAnimation(end), s,
+					player, enemy);
 		} else if (begin == "Right" && end == "Mid") {
 			tempAnimation = new Animation(1, "RightToMid", animationSpeed,
-					getPointForAnimation(begin), getPointForAnimation(end), s,player,enemy);
+					getPointForAnimation(begin), getPointForAnimation(end), s,
+					player, enemy);
 		} else if (begin == "Top" && end == "Mid") {
 			tempAnimation = new Animation(2, "TopToMid", animationSpeed,
-					getPointForAnimation(begin), getPointForAnimation(end),s,player,enemy);
+					getPointForAnimation(begin), getPointForAnimation(end), s,
+					player, enemy);
 		} else if (begin == "Mid" && end == "Left") {
 			tempAnimation = new Animation(1, "MidToLeft", animationSpeed,
-					getPointForAnimation(begin), getPointForAnimation(end), s,player,enemy);
+					getPointForAnimation(begin), getPointForAnimation(end), s,
+					player, enemy);
 		} else if (begin == "Mid" && end == "Right") {
 			tempAnimation = new Animation(1, "MidToRight", animationSpeed,
-					getPointForAnimation(begin), getPointForAnimation(end), s,player,enemy);
+					getPointForAnimation(begin), getPointForAnimation(end), s,
+					player, enemy);
 		} else if (begin == "Mid" && end == "Top") {
 			tempAnimation = new Animation(2, "MidToTop", animationSpeed,
-					getPointForAnimation(begin), getPointForAnimation(end),s,player,enemy);
+					getPointForAnimation(begin), getPointForAnimation(end), s,
+					player, enemy);
 		} else if (begin == "Mid" && end == "Bot") {
 			tempAnimation = new Animation(2, "MidToBot", animationSpeed,
-					getPointForAnimation(begin), getPointForAnimation(end), s,player,enemy);
+					getPointForAnimation(begin), getPointForAnimation(end), s,
+					player, enemy);
+		}else if(begin == "Bot" && end == "Mid")
+		{
+			tempAnimation = new Animation(2, "BotToMid", animationSpeed,
+					getPointForAnimation(begin), getPointForAnimation(end), s,
+					player, enemy);
 		}
 		tempAnimation.setModifier();
 		animationQueue.add(tempAnimation);
@@ -1561,14 +1675,14 @@ public class GameScene extends AbstractScene {
 	private PointF getPointForAnimation(String s) {
 		PointF p = new PointF();
 		if (s.equals("Left")) {
-			p.x = (0);
+			p.x = (1);
 			p.y = (float) (rm.SCALED_CAMERA_HEIGHT / 3.937);
 		} else if (s.equals("Right")) {
 			p.x = rm.SCALED_CAMERA_WIDTH;
 			p.y = (float) (rm.SCALED_CAMERA_HEIGHT / 3.937);
 		} else if (s.equals("Top")) {
 			p.x = (float) (rm.SCALED_CAMERA_WIDTH / 1.931);
-			p.y = rm.SCALED_CAMERA_HEIGHT / 100;
+			p.y = 0;
 		} else if (s.equals("Mid")) {
 			p.x = (float) (rm.SCALED_CAMERA_WIDTH / 1.931);
 			p.y = (float) (rm.SCALED_CAMERA_HEIGHT / 3.937);
@@ -1604,17 +1718,24 @@ public class GameScene extends AbstractScene {
 	@Override
 	protected void onManagedUpdate(float pSecondsElapsed) {
 		// Debug.i("test");
-		
-		if (!animationRunning) {
-			if (mGame.getRound() > currRound && STATE != 5) {
-				currRound = mGame.getRound();
-				showNewRound();
-			}else if (mGame.isMyTurn(mPlayer) && STATE == 0) {
+
+		if (canInput) {
+			if (!drawCardHighlightIsShown) {
 				showDrawCardHighlight();
-			} else if (!mGame.isGameStarted()) {
-				showEndScreen();
 			}
 		}
+		if (!animationRunning && !mGame.isGameStarted()) {
+			showEndScreen();
+		}
+		/*
+		 * 
+		 * if (!animationRunning) { if (mGame.getRound() > currRound && STATE !=
+		 * 5) { currRound = mGame.getRound(); showNewRound(); }else if
+		 * (mGame.isMyTurn(mPlayer) && mGame.getRound() == currRound &&
+		 * !drawCardHighlightIsShown) { // TODO Auto-generated method stub
+		 * showDrawCardHighlight(); } else if (!mGame.isGameStarted()) {
+		 * showEndScreen(); } }
+		 */
 		super.onManagedUpdate(pSecondsElapsed);
 	}
 
